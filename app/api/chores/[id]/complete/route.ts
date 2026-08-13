@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { todayStr } from '@/lib/dates';
 import { evaluateAndAwardTrophies } from '@/lib/trophies';
+import { parseId } from '@/lib/validate';
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
-  const choreId = Number(params.id);
+  const choreId = parseId(params.id);
+  if (!choreId) return NextResponse.json({ error: 'Invalid chore id' }, { status: 400 });
   const db = getDb();
   const chore = db.prepare('SELECT * FROM chores WHERE id = ?').get(choreId) as any;
   if (!chore) return NextResponse.json({ error: 'Chore not found' }, { status: 404 });
