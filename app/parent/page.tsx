@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import ParentDashboard from '@/components/parent/ParentDashboard';
 
-const SESSION_KEY = 'chore_tracker_parent_authed';
-
 export default function ParentGatePage() {
   const [pinSet, setPinSet] = useState<boolean | null>(null);
   const [authed, setAuthed] = useState(false);
@@ -14,12 +12,12 @@ export default function ParentGatePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && sessionStorage.getItem(SESSION_KEY) === 'true') {
-      setAuthed(true);
-    }
     fetch('/api/parent/auth')
       .then((r) => r.json())
-      .then((d) => setPinSet(d.pinSet));
+      .then((d) => {
+        setPinSet(d.pinSet);
+        setAuthed(d.authed);
+      });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -43,7 +41,6 @@ export default function ParentGatePage() {
         setError(data.error || 'Incorrect PIN');
         return;
       }
-      sessionStorage.setItem(SESSION_KEY, 'true');
       setAuthed(true);
     } finally {
       setSubmitting(false);

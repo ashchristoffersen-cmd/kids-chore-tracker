@@ -37,9 +37,15 @@ export default function ParentDashboard() {
     <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-extrabold text-slate-800">👪 Parent Zone</h1>
-        <a href="/" className="tap-target rounded-full bg-white/80 px-4 py-2 text-sm font-bold shadow">
+        <button
+          onClick={async () => {
+            await fetch('/api/parent/auth', { method: 'DELETE' });
+            window.location.href = '/';
+          }}
+          className="tap-target rounded-full bg-white/80 px-4 py-2 text-sm font-bold shadow"
+        >
           Exit
-        </a>
+        </button>
       </div>
 
       <div className="mt-6 flex gap-2 rounded-2xl bg-white/60 p-1.5">

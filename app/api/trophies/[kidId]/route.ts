@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { TROPHY_CATALOG } from '@/lib/trophies';
+import { parseId } from '@/lib/validate';
 
 export async function GET(_req: NextRequest, { params }: { params: { kidId: string } }) {
-  const kidId = Number(params.kidId);
+  const kidId = parseId(params.kidId);
+  if (!kidId) return NextResponse.json({ error: 'Invalid kid id' }, { status: 400 });
   const db = getDb();
   const earnedRows = db
     .prepare('SELECT trophy_id, earned_at FROM kid_trophies WHERE kid_id = ?')
