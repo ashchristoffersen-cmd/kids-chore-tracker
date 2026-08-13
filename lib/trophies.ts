@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { addDays, todayStr } from './dates';
+import { addDays, dayOfWeek, todayStr } from './dates';
 
 export interface TrophyDef {
   id: string;
@@ -61,22 +61,26 @@ export function currentStreakFromDates(dateSet: Set<string>, today: string): num
   return streak;
 }
 
-/** Current consecutive-day streak for each of a kid's chores, keyed by chore id. */
-export function getChoreStreaks(db: Database.Database, kidId: number): Map<number, number> {
-  const today = todayStr();
+/** A kid's completion dates, in ascending order, grouped by chore id. */
+export function getCompletionDatesByChore(db: Database.Database, kidId: number): Map<number, string[]> {
   const rows = db
     .prepare('SELECT chore_id, date FROM chore_completions WHERE kid_id = ? ORDER BY date ASC')
     .all(kidId) as { chore_id: number; date: string }[];
 
-  const datesByChore = new Map<number, Set<string>>();
+  const datesByChore = new Map<number, string[]>();
   for (const row of rows) {
-    if (!datesByChore.has(row.chore_id)) datesByChore.set(row.chore_id, new Set());
-    datesByChore.get(row.chore_id)!.add(row.date);
+    if (!datesByChore.has(row.chore_id)) datesByChore.set(row.chore_id, []);
+    datesByChore.get(row.chore_id)!.push(row.date);
   }
+  return datesByChore;
+}
 
+/** Current consecutive-day streak for each of a kid's chores, keyed by chore id. */
+export function getChoreStreaks(db: Database.Database, kidId: number): Map<number, number> {
+  const today = todayStr();
   const streaks = new Map<number, number>();
-  for (const [choreId, dates] of datesByChore) {
-    streaks.set(choreId, currentStreakFromDates(dates, today));
+  for (const [choreId, dates] of getCompletionDatesByChore(db, kidId)) {
+    streaks.set(choreId, currentStreakFromDates(new Set(dates), today));
   }
   return streaks;
 }
@@ -99,17 +103,8 @@ export function computeKidStats(db: Database.Database, kidId: number): KidStats 
     .all(kidId) as { id: number }[];
   const activeChoreIds = activeChores.map((c) => c.id);
 
-  const completionRows = db
-    .prepare('SELECT chore_id, date FROM chore_completions WHERE kid_id = ? ORDER BY date ASC')
-    .all(kidId) as { chore_id: number; date: string }[];
-
-  const datesByChore = new Map<number, string[]>();
-  const distinctChoreIdsCompleted = new Set<number>();
-  for (const row of completionRows) {
-    distinctChoreIdsCompleted.add(row.chore_id);
-    if (!datesByChore.has(row.chore_id)) datesByChore.set(row.chore_id, []);
-    datesByChore.get(row.chore_id)!.push(row.date);
-  }
+  const datesByChore = getCompletionDatesByChore(db, kidId);
+  const distinctChoreIdsCompleted = new Set(datesByChore.keys());
 
   let bestChoreStreak = 0;
   let comebackKid = false;
@@ -147,11 +142,14 @@ export function computeKidStats(db: Database.Database, kidId: number): KidStats 
   earlyBird = earlyRow.c > 0;
 
   // Perfect-day tracking uses only currently active chores.
+  const activeChoreIdSet = new Set(activeChoreIds);
   const dateCompletionCounts = new Map<string, Set<number>>();
-  for (const row of completionRows) {
-    if (!activeChoreIds.includes(row.chore_id)) continue;
-    if (!dateCompletionCounts.has(row.date)) dateCompletionCounts.set(row.date, new Set());
-    dateCompletionCounts.get(row.date)!.add(row.chore_id);
+  for (const [choreId, dates] of datesByChore) {
+    if (!activeChoreIdSet.has(choreId)) continue;
+    for (const date of dates) {
+      if (!dateCompletionCounts.has(date)) dateCompletionCounts.set(date, new Set());
+      dateCompletionCounts.get(date)!.add(choreId);
+    }
   }
   const perfectDates = new Set<string>();
   if (activeChoreIds.length > 0) {
@@ -163,9 +161,7 @@ export function computeKidStats(db: Database.Database, kidId: number): KidStats 
 
   let weekendWarrior = false;
   for (const date of perfectDates) {
-    const [y, m, d] = date.split('-').map(Number);
-    const dow = new Date(y, m - 1, d).getDay();
-    if (dow === 6 && perfectDates.has(addDays(date, 1))) {
+    if (dayOfWeek(date) === 6 && perfectDates.has(addDays(date, 1))) {
       weekendWarrior = true;
       break;
     }

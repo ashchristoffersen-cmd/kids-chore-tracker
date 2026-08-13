@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import ChoreCard, { ChoreState } from './ChoreCard';
 import TrophyModal, { EarnedTrophy } from './TrophyModal';
+import BackLink from './BackLink';
+import { apiGet, apiPost } from '@/lib/api';
 import { fireChoreConfetti } from '@/lib/confetti';
 import { formatCents } from '@/lib/money';
 
@@ -39,14 +41,12 @@ export default function KidDashboard({
     if (busyId) return;
     setBusyId(choreId);
     try {
-      const res = await fetch(`/api/chores/${choreId}/complete`, { method: 'POST' });
-      const data = await res.json();
+      const { data } = await apiPost(`/api/chores/${choreId}/complete`);
 
       if (data.completed) fireChoreConfetti();
       setBalanceCents(data.balanceCents);
 
-      const detailRes = await fetch(`/api/kids/${kid.id}`);
-      const detail = await detailRes.json();
+      const detail = await apiGet(`/api/kids/${kid.id}`);
       setChores(detail.chores);
       setEarnedCount(detail.trophies.filter((t: any) => t.earned).length);
 
@@ -61,15 +61,10 @@ export default function KidDashboard({
   return (
     <div className="mx-auto min-h-screen max-w-2xl px-4 pb-16 pt-6">
       <div className="flex items-center justify-between">
-        <a href="/" className="tap-target rounded-full bg-white/80 px-4 py-2 text-sm font-bold shadow">
-          ← Switch Kid
-        </a>
-        <a
-          href={`/kid/${kid.id}/trophies`}
-          className="tap-target rounded-full bg-white/80 px-4 py-2 text-sm font-bold shadow"
-        >
+        <BackLink href="/">← Switch Kid</BackLink>
+        <BackLink href={`/kid/${kid.id}/trophies`}>
           🏆 {earnedCount}/{trophyTotal}
-        </a>
+        </BackLink>
       </div>
 
       <div className="mt-6 flex flex-col items-center text-center">

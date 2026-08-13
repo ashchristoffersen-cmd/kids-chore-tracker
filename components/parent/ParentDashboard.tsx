@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import BackLink from '@/components/BackLink';
+import { apiGet } from '@/lib/api';
 import KidsChoresTab from './KidsChoresTab';
 import BankTab from './BankTab';
 import SettingsTab from './SettingsTab';
@@ -23,9 +25,7 @@ export default function ParentDashboard() {
   const [loading, setLoading] = useState(true);
 
   const refreshKids = useCallback(async () => {
-    const res = await fetch('/api/kids');
-    const data = await res.json();
-    setKids(data);
+    setKids(await apiGet('/api/kids'));
     setLoading(false);
   }, []);
 
@@ -37,9 +37,7 @@ export default function ParentDashboard() {
     <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-extrabold text-slate-800">👪 Parent Zone</h1>
-        <a href="/" className="tap-target rounded-full bg-white/80 px-4 py-2 text-sm font-bold shadow">
-          Exit
-        </a>
+        <BackLink href="/">Exit</BackLink>
       </div>
 
       <div className="mt-6 flex gap-2 rounded-2xl bg-white/60 p-1.5">

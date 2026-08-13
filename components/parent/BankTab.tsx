@@ -1,16 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatCents } from '@/lib/money';
+import { apiGet, apiPost } from '@/lib/api';
+import { dollarsToCents, formatCents } from '@/lib/money';
+import DollarInput from '@/components/DollarInput';
+import TransactionList, { Transaction } from '@/components/TransactionList';
 import { KidSummary } from './ParentDashboard';
-
-interface Transaction {
-  id: number;
-  amount_cents: number;
-  reason: string;
-  type: string;
-  created_at: string;
-}
 
 export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; refreshKids: () => Promise<void> }) {
   const [selectedKidId, setSelectedKidId] = useState<number | null>(kids[0]?.id ?? null);
@@ -25,8 +20,7 @@ export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; ref
   }, [kids, selectedKidId]);
 
   async function loadBank(kidId: number) {
-    const res = await fetch(`/api/bank/${kidId}`);
-    const data = await res.json();
+    const data = await apiGet(`/api/bank/${kidId}`);
     setBalanceCents(data.balanceCents);
     setTransactions(data.transactions);
   }
@@ -37,18 +31,14 @@ export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; ref
 
   async function handleAdjust(type: 'manual_add' | 'manual_remove') {
     if (!selectedKidId) return;
-    const cents = Math.round(parseFloat(amount || '0') * 100);
-    if (!cents || cents <= 0) return;
+    const cents = dollarsToCents(amount);
+    if (!cents) return;
     setSubmitting(true);
     try {
-      await fetch(`/api/bank/${selectedKidId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount_cents: cents,
-          reason: reason.trim() || (type === 'manual_add' ? 'Deposit from parent' : 'Withdrawal'),
-          type,
-        }),
+      await apiPost(`/api/bank/${selectedKidId}`, {
+        amount_cents: cents,
+        reason: reason.trim() || (type === 'manual_add' ? 'Deposit from parent' : 'Withdrawal'),
+        type,
       });
       setAmount('');
       setReason('');
@@ -87,15 +77,12 @@ export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; ref
       <div className="rounded-3xl bg-white p-5 shadow">
         <div className="mb-3 text-sm font-bold uppercase text-slate-400">Add or Remove Money</div>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-slate-500">$</span>
-          <input
-            type="number"
-            step="0.05"
-            min="0"
-            placeholder="0.00"
+          <DollarInput
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-28 rounded-xl border-2 border-slate-200 px-3 py-2 text-lg"
+            onChange={setAmount}
+            placeholder="0.00"
+            inputClassName="w-28 text-lg"
+            symbolClassName="text-lg"
           />
           <input
             placeholder="Reason (optional)"
@@ -124,23 +111,7 @@ export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; ref
 
       <div>
         <div className="mb-2 text-sm font-bold uppercase text-slate-400">History</div>
-        <div className="space-y-2">
-          {transactions.length === 0 && (
-            <div className="rounded-2xl bg-white/70 p-6 text-center text-slate-400">No activity yet</div>
-          )}
-          {transactions.map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm">
-              <div>
-                <div className="text-sm font-semibold text-slate-700">{t.reason}</div>
-                <div className="text-xs text-slate-400">{new Date(t.created_at).toLocaleString()}</div>
-              </div>
-              <div className={`font-bold ${t.amount_cents >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                {t.amount_cents >= 0 ? '+' : ''}
-                {formatCents(t.amount_cents)}
-              </div>
-            </div>
-          ))}
-        </div>
+        <TransactionList transactions={transactions} compact />
       </div>
     </div>
   );

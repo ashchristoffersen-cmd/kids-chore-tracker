@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { todayStr } from '@/lib/dates';
+import { getBalanceCents } from '@/lib/queries';
 import { evaluateAndAwardTrophies } from '@/lib/trophies';
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -41,11 +42,5 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   const newTrophies = completed ? evaluateAndAwardTrophies(db, chore.kid_id) : [];
 
-  const balanceCents = (
-    db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ?').get(chore.kid_id) as {
-      s: number;
-    }
-  ).s;
-
-  return NextResponse.json({ completed, newTrophies, balanceCents });
+  return NextResponse.json({ completed, newTrophies, balanceCents: getBalanceCents(db, chore.kid_id) });
 }

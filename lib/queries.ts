@@ -1,17 +1,41 @@
 import type Database from 'better-sqlite3';
 import { todayStr } from './dates';
-import { getChoreStreaks, TROPHY_CATALOG } from './trophies';
+import { getChoreStreaks, TROPHY_CATALOG, TrophyDef } from './trophies';
+
+export interface TrophyStatus extends TrophyDef {
+  earned: boolean;
+  earnedAt: string | null;
+}
+
+/** Total piggy-bank balance for a kid, in cents. */
+export function getBalanceCents(db: Database.Database, kidId: number): number {
+  return (
+    db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ?').get(kidId) as {
+      s: number;
+    }
+  ).s;
+}
+
+/** The whole trophy catalog, annotated with whether this kid has earned each one. */
+export function getTrophyStatus(db: Database.Database, kidId: number): TrophyStatus[] {
+  const earnedRows = db
+    .prepare('SELECT trophy_id, earned_at FROM kid_trophies WHERE kid_id = ?')
+    .all(kidId) as { trophy_id: string; earned_at: string }[];
+  const earnedMap = new Map(earnedRows.map((r) => [r.trophy_id, r.earned_at]));
+
+  return TROPHY_CATALOG.map((t) => ({
+    ...t,
+    earned: earnedMap.has(t.id),
+    earnedAt: earnedMap.get(t.id) || null,
+  }));
+}
 
 export function getKidsSummary(db: Database.Database) {
   const kids = db.prepare('SELECT * FROM kids ORDER BY sort_order ASC, id ASC').all() as any[];
   const today = todayStr();
 
   return kids.map((kid) => {
-    const balanceCents = (
-      db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ?').get(kid.id) as {
-        s: number;
-      }
-    ).s;
+    const balanceCents = getBalanceCents(db, kid.id);
     const totalChores = (
       db.prepare('SELECT COUNT(*) AS c FROM chores WHERE kid_id = ? AND active = 1').get(kid.id) as { c: number }
     ).c;
@@ -53,32 +77,16 @@ export function getKidDetail(db: Database.Database, kidId: number) {
     streak: streaks.get(c.id) || 0,
   }));
 
-  const balanceCents = (
-    db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ?').get(kidId) as {
-      s: number;
-    }
-  ).s;
-
-  const earnedTrophyRows = db
-    .prepare('SELECT trophy_id, earned_at FROM kid_trophies WHERE kid_id = ?')
-    .all(kidId) as { trophy_id: string; earned_at: string }[];
-  const earnedMap = new Map(earnedTrophyRows.map((r) => [r.trophy_id, r.earned_at]));
-
-  const trophies = TROPHY_CATALOG.map((t) => ({
-    ...t,
-    earned: earnedMap.has(t.id),
-    earnedAt: earnedMap.get(t.id) || null,
-  }));
-
-  return { kid, chores: choresWithState, balanceCents, trophies };
+  return {
+    kid,
+    chores: choresWithState,
+    balanceCents: getBalanceCents(db, kidId),
+    trophies: getTrophyStatus(db, kidId),
+  };
 }
 
 export function getBank(db: Database.Database, kidId: number) {
-  const balanceCents = (
-    db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ?').get(kidId) as {
-      s: number;
-    }
-  ).s;
+  const balanceCents = getBalanceCents(db, kidId);
   const transactions = db
     .prepare('SELECT * FROM transactions WHERE kid_id = ? ORDER BY created_at DESC, id DESC LIMIT 100')
     .all(kidId);
