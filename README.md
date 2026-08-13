@@ -32,6 +32,25 @@ npm run start
 ```
 
 This is a small self-hosted app meant to run on a home server, NAS, or
-Raspberry Pi and be opened from a shared tablet/browser on your home network —
-there's no built-in HTTPS or multi-household auth, so don't expose it directly
-to the internet.
+Raspberry Pi and be opened from a shared tablet/browser on your home network.
+Only the Parent Zone is PIN-protected — there's no per-user login — so treat
+it as a single-household app rather than a multi-tenant service.
+
+## Deploying (Railway)
+
+The repo includes a `Dockerfile` and `railway.toml` for deploying to
+[Railway](https://railway.app):
+
+1. In Railway, create a new project from this GitHub repo (pick the branch
+   you want deployed).
+2. Railway will detect the `Dockerfile` automatically and build from it.
+3. Add a **volume** to the service, mounted at `/data`. This is where the
+   SQLite database lives — without it, data is lost on every redeploy.
+4. Set the env var `DATA_DIR=/data` (the Dockerfile already sets this as a
+   default, but setting it explicitly is a good safety net).
+5. Deploy, then generate a public domain for the service under
+   Settings → Networking to get your app's URL.
+
+The app listens on `$PORT` (Railway sets this automatically) and has no other
+required environment variables — the parent PIN is set from within the app on
+first visit, not via config.
