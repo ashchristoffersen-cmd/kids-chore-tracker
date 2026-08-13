@@ -200,9 +200,28 @@ function ChoreManager({
     onChange();
   }
 
+  async function handleResetProgress() {
+    if (
+      !confirm(
+        'Reset this kid’s progress? This clears all completions, streaks, trophies, and piggy bank balance. Their chore list stays the same. This can’t be undone.'
+      )
+    )
+      return;
+    await fetch(`/api/kids/${kidId}/reset`, { method: 'POST' });
+    onChange();
+  }
+
   return (
     <div className="border-t border-slate-100 bg-slate-50 p-4">
-      <div className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400">Daily Chores</div>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-bold uppercase tracking-wide text-slate-400">Daily Chores</div>
+        <button
+          onClick={handleResetProgress}
+          className="tap-target rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-500"
+        >
+          Reset Progress
+        </button>
+      </div>
       <div className="space-y-2">
         {chores.map((chore) =>
           editingId === chore.id ? (
