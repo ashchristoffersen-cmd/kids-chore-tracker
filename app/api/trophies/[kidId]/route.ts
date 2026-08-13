@@ -1,10 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { kidExists } from '@/lib/queries';
 import { TROPHY_CATALOG } from '@/lib/trophies';
+import { notFound, parseIdParam, route } from '@/lib/api';
 
-export async function GET(_req: NextRequest, { params }: { params: { kidId: string } }) {
-  const kidId = Number(params.kidId);
+type Ctx = { params: { kidId: string } };
+
+export const GET = route<Ctx>(async (_req, { params }) => {
+  const kidId = parseIdParam(params.kidId, 'kid id');
   const db = getDb();
+  if (!kidExists(db, kidId)) throw notFound('Kid not found');
+
   const earnedRows = db
     .prepare('SELECT trophy_id, earned_at FROM kid_trophies WHERE kid_id = ?')
     .all(kidId) as { trophy_id: string; earned_at: string }[];
@@ -17,4 +23,4 @@ export async function GET(_req: NextRequest, { params }: { params: { kidId: stri
   }));
 
   return NextResponse.json({ trophies });
-}
+});

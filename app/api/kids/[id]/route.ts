@@ -1,37 +1,58 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getKidDetail } from '@/lib/queries';
+import { badRequest, notFound, parseIdParam, readJsonBody, route } from '@/lib/api';
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const kidId = Number(params.id);
-  const db = getDb();
-  const detail = getKidDetail(db, kidId);
-  if (!detail) return NextResponse.json({ error: 'Kid not found' }, { status: 404 });
+type Ctx = { params: { id: string } };
+
+const TEXT_FIELDS = ['name', 'avatar', 'color'] as const;
+
+export const GET = route<Ctx>(async (_req, { params }) => {
+  const kidId = parseIdParam(params.id, 'kid id');
+  const detail = getKidDetail(getDb(), kidId);
+  if (!detail) throw notFound('Kid not found');
   return NextResponse.json(detail);
-}
+});
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const kidId = Number(params.id);
-  const body = await req.json();
-  const db = getDb();
+export const PATCH = route<Ctx>(async (req, { params }) => {
+  const kidId = parseIdParam(params.id, 'kid id');
+  const body = await readJsonBody(req);
+
   const fields: string[] = [];
-  const values: any[] = [];
-  for (const key of ['name', 'avatar', 'color', 'sort_order']) {
-    if (body[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(body[key]);
+  const values: (string | number)[] = [];
+
+  for (const key of TEXT_FIELDS) {
+    const value = body[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || (key === 'name' && !value.trim())) {
+      throw badRequest(`${key} must be a non-empty string`);
     }
+    fields.push(`${key} = ?`);
+    values.push(key === 'name' ? value.trim() : value);
   }
-  if (fields.length === 0) return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+
+  if (body.sort_order !== undefined) {
+    if (typeof body.sort_order !== 'number' || !Number.isFinite(body.sort_order)) {
+      throw badRequest('sort_order must be a number');
+    }
+    fields.push('sort_order = ?');
+    values.push(Math.round(body.sort_order));
+  }
+
+  if (fields.length === 0) throw badRequest('No fields to update');
+
+  const db = getDb();
   values.push(kidId);
-  db.prepare(`UPDATE kids SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  const info = db.prepare(`UPDATE kids SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  if (info.changes === 0) throw notFound('Kid not found');
+
   const kid = db.prepare('SELECT * FROM kids WHERE id = ?').get(kidId);
   return NextResponse.json(kid);
-}
+});
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const kidId = Number(params.id);
-  const db = getDb();
-  db.prepare('DELETE FROM kids WHERE id = ?').run(kidId);
+export const DELETE = route<Ctx>(async (_req, { params }) => {
+  const kidId = parseIdParam(params.id, 'kid id');
+  const info = getDb().prepare('DELETE FROM kids WHERE id = ?').run(kidId);
+  if (info.changes === 0) throw notFound('Kid not found');
   return NextResponse.json({ ok: true });
-}
+});

@@ -2,6 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { getDb } from './db';
 
 const PIN_HASH_KEY = 'parent_pin_hash';
+const HEX = /^[0-9a-f]+$/i;
 
 function hashPin(pin: string, salt: string): string {
   return scryptSync(pin, salt, 32).toString('hex');
@@ -29,9 +30,15 @@ export function verifyPin(pin: string): boolean {
     | { value: string }
     | undefined;
   if (!row) return false;
+
   const [salt, storedHash] = row.value.split(':');
-  const candidate = hashPin(pin, salt);
-  const a = Buffer.from(candidate, 'hex');
+  // A malformed stored hash cannot be compared; reporting "wrong PIN" would
+  // hide a broken database behind a plausible-looking rejection.
+  if (!salt || !storedHash || !HEX.test(salt) || !HEX.test(storedHash)) {
+    throw new Error('Stored parent PIN hash is malformed; the PIN must be reset');
+  }
+
+  const a = Buffer.from(hashPin(pin, salt), 'hex');
   const b = Buffer.from(storedHash, 'hex');
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);

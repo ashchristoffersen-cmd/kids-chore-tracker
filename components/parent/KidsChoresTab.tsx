@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { AVATAR_OPTIONS, AVATAR_COLORS, CHORE_EMOJI_OPTIONS } from '@/lib/emojis';
 import { formatCents } from '@/lib/money';
+import { errorMessage, fetchJson, postJson } from '@/lib/fetchJson';
+import ErrorBanner from '../ErrorBanner';
 import { KidSummary } from './ParentDashboard';
 
 interface ChoreFull {
@@ -28,11 +30,11 @@ export default function KidsChoresTab({
 
   const [expandedKid, setExpandedKid] = useState<number | null>(null);
   const [choresByKid, setChoresByKid] = useState<Record<number, ChoreFull[]>>({});
+  const [error, setError] = useState('');
 
   async function loadChores(kidId: number) {
-    const res = await fetch(`/api/kids/${kidId}`);
-    const data = await res.json();
-    setChoresByKid((prev) => ({ ...prev, [kidId]: data.chores }));
+    const data = await fetchJson<{ chores: ChoreFull[] }>(`/api/kids/${kidId}`);
+    setChoresByKid((prev) => ({ ...prev, [kidId]: data.chores ?? [] }));
   }
 
   async function toggleExpand(kidId: number) {
@@ -41,30 +43,58 @@ export default function KidsChoresTab({
       return;
     }
     setExpandedKid(kidId);
-    if (!choresByKid[kidId]) await loadChores(kidId);
+    if (!choresByKid[kidId]) {
+      setError('');
+      try {
+        await loadChores(kidId);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    }
   }
 
   async function handleAddKid(e: React.FormEvent) {
     e.preventDefault();
-    if (!newKidName.trim()) return;
-    await fetch('/api/kids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newKidName.trim(), avatar: newKidAvatar, color: newKidColor }),
-    });
-    setNewKidName('');
-    setAddingKid(false);
-    await refreshKids();
+    if (!newKidName.trim()) {
+      setError("Enter the kid's name");
+      return;
+    }
+    setError('');
+    try {
+      await postJson('/api/kids', { name: newKidName.trim(), avatar: newKidAvatar, color: newKidColor });
+      setNewKidName('');
+      setAddingKid(false);
+      await refreshKids();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   async function handleDeleteKid(kidId: number, name: string) {
     if (!confirm(`Remove ${name} and all their chore history? This can't be undone.`)) return;
-    await fetch(`/api/kids/${kidId}`, { method: 'DELETE' });
-    await refreshKids();
+    setError('');
+    try {
+      await fetchJson(`/api/kids/${kidId}`, { method: 'DELETE' });
+      await refreshKids();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  /** Reloads a kid's chores plus the dashboard summary, surfacing any failure. */
+  async function reloadAfterChoreChange(kidId: number) {
+    setError('');
+    try {
+      await loadChores(kidId);
+      await refreshKids();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   return (
     <div className="space-y-4">
+      {error && <ErrorBanner message={error} />}
       {kids.map((kid) => (
         <div key={kid.id} className="overflow-hidden rounded-3xl bg-white shadow">
           <div className="flex items-center gap-4 p-4">
@@ -95,7 +125,7 @@ export default function KidsChoresTab({
           </div>
 
           {expandedKid === kid.id && (
-            <ChoreManager kidId={kid.id} chores={choresByKid[kid.id] || []} onChange={() => loadChores(kid.id).then(refreshKids)} />
+            <ChoreManager kidId={kid.id} chores={choresByKid[kid.id] || []} onChange={() => reloadAfterChoreChange(kid.id)} />
           )}
         </div>
       ))}
@@ -179,30 +209,46 @@ function ChoreManager({
   const [emoji, setEmoji] = useState(CHORE_EMOJI_OPTIONS[0]);
   const [dollars, setDollars] = useState('0.25');
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [error, setError] = useState('');
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
-    const money_cents = Math.max(0, Math.round(parseFloat(dollars || '0') * 100));
-    await fetch('/api/chores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kid_id: kidId, name: name.trim(), emoji, money_cents }),
-    });
-    setName('');
-    setDollars('0.25');
-    setAdding(false);
-    onChange();
+    if (!name.trim()) {
+      setError('Enter a chore name');
+      return;
+    }
+    const parsed = parseFloat(dollars);
+    const money_cents = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100)) : 0;
+    setError('');
+    try {
+      await postJson('/api/chores', { kid_id: kidId, name: name.trim(), emoji, money_cents });
+      setName('');
+      setDollars('0.25');
+      setAdding(false);
+      onChange();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   async function handleArchive(choreId: number) {
-    await fetch(`/api/chores/${choreId}`, { method: 'DELETE' });
-    onChange();
+    setError('');
+    try {
+      await fetchJson(`/api/chores/${choreId}`, { method: 'DELETE' });
+      onChange();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }
 
   return (
     <div className="border-t border-slate-100 bg-slate-50 p-4">
       <div className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-400">Daily Chores</div>
+      {error && (
+        <div className="mb-3">
+          <ErrorBanner message={error} />
+        </div>
+      )}
       <div className="space-y-2">
         {chores.map((chore) =>
           editingId === chore.id ? (
@@ -310,19 +356,27 @@ function EditChoreRow({
   const [name, setName] = useState(chore.name);
   const [emoji, setEmoji] = useState(chore.emoji);
   const [dollars, setDollars] = useState((chore.money_cents / 100).toFixed(2));
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    const money_cents = Math.max(0, Math.round(parseFloat(dollars || '0') * 100));
-    await fetch(`/api/chores/${chore.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() || chore.name, emoji, money_cents }),
-    });
-    onDone();
+    const parsed = parseFloat(dollars);
+    const money_cents = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100)) : 0;
+    setError('');
+    setSaving(true);
+    try {
+      await postJson(`/api/chores/${chore.id}`, { name: name.trim() || chore.name, emoji, money_cents }, 'PATCH');
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="space-y-3 rounded-2xl bg-white p-3 shadow-sm">
+      {error && <ErrorBanner message={error} />}
       <div className="flex flex-wrap gap-2">
         {CHORE_EMOJI_OPTIONS.map((em) => (
           <button
@@ -354,8 +408,12 @@ function EditChoreRow({
         />
       </div>
       <div className="flex gap-2">
-        <button onClick={handleSave} className="tap-target flex-1 rounded-xl bg-grassy py-2 font-bold text-white">
-          Save
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="tap-target flex-1 rounded-xl bg-grassy py-2 font-bold text-white disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
         </button>
         <button onClick={onCancel} className="tap-target rounded-xl bg-slate-100 px-4 py-2 font-bold text-slate-500">
           Cancel

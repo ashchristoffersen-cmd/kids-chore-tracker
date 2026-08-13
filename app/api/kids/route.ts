@@ -1,18 +1,26 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getKidsSummary } from '@/lib/queries';
+import { badRequest, readJsonBody, route } from '@/lib/api';
 
-export async function GET() {
+export const GET = route(async () => {
   const db = getDb();
   return NextResponse.json(getKidsSummary(db));
-}
+});
 
-export async function POST(req: NextRequest) {
-  const body = await req.json();
+export const POST = route(async (req) => {
+  const body = await readJsonBody(req);
   const { name, avatar, color } = body;
-  if (!name || typeof name !== 'string' || !name.trim()) {
-    return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+  if (typeof name !== 'string' || !name.trim()) {
+    throw badRequest('Name is required');
   }
+  if (avatar !== undefined && typeof avatar !== 'string') {
+    throw badRequest('avatar must be a string');
+  }
+  if (color !== undefined && typeof color !== 'string') {
+    throw badRequest('color must be a string');
+  }
+
   const db = getDb();
   const maxOrder = (
     db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM kids').get() as { m: number }
@@ -22,4 +30,4 @@ export async function POST(req: NextRequest) {
     .run(name.trim(), avatar || '🦁', color || '#4fc3f7', maxOrder + 1);
   const kid = db.prepare('SELECT * FROM kids WHERE id = ?').get(info.lastInsertRowid);
   return NextResponse.json(kid, { status: 201 });
-}
+});

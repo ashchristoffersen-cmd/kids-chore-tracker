@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { errorMessage, postJson } from '@/lib/fetchJson';
 
 export default function SettingsTab() {
   const [currentPin, setCurrentPin] = useState('');
@@ -8,6 +9,7 @@ export default function SettingsTab() {
   const [confirmPin, setConfirmPin] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -17,20 +19,18 @@ export default function SettingsTab() {
       setError('New PINs do not match');
       return;
     }
-    const res = await fetch('/api/parent/change-pin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentPin, newPin }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || 'Something went wrong');
-      return;
+    setSubmitting(true);
+    try {
+      await postJson('/api/parent/change-pin', { currentPin, newPin });
+      setMessage('PIN updated!');
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
-    setMessage('PIN updated!');
-    setCurrentPin('');
-    setNewPin('');
-    setConfirmPin('');
   }
 
   return (
@@ -63,8 +63,12 @@ export default function SettingsTab() {
         />
         {error && <div className="text-sm font-semibold text-red-500">{error}</div>}
         {message && <div className="text-sm font-semibold text-green-600">{message}</div>}
-        <button type="submit" className="tap-target w-full rounded-xl bg-grape py-3 font-bold text-white">
-          Update PIN
+        <button
+          type="submit"
+          disabled={submitting}
+          className="tap-target w-full rounded-xl bg-grape py-3 font-bold text-white disabled:opacity-50"
+        >
+          {submitting ? 'Updating…' : 'Update PIN'}
         </button>
       </form>
     </div>

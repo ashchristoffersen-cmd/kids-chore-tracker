@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { isPinSet, setPin, verifyPin } from '@/lib/auth';
+import { badRequest, readJsonBody, route } from '@/lib/api';
 
-export async function GET() {
+export const GET = route(async () => {
   return NextResponse.json({ pinSet: isPinSet() });
-}
+});
 
-export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const pin = String(body.pin || '');
+export const POST = route(async (req) => {
+  const body = await readJsonBody(req);
+  const pin = typeof body.pin === 'string' || typeof body.pin === 'number' ? String(body.pin) : '';
   if (!/^\d{4,6}$/.test(pin)) {
-    return NextResponse.json({ error: 'PIN must be 4-6 digits' }, { status: 400 });
+    throw badRequest('PIN must be 4-6 digits');
   }
 
   if (!isPinSet()) {
@@ -17,7 +18,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, created: true });
   }
 
-  const ok = verifyPin(pin);
-  if (!ok) return NextResponse.json({ ok: false }, { status: 401 });
+  if (!verifyPin(pin)) {
+    return NextResponse.json({ ok: false, error: 'Incorrect PIN' }, { status: 401 });
+  }
   return NextResponse.json({ ok: true, created: false });
-}
+});
