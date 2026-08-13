@@ -1,74 +1,68 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { Pool, QueryResultRow } from 'pg';
 import { TROPHY_CATALOG } from './trophies';
-
-const DATA_DIR = process.env.DATA_DIR
-  ? path.resolve(process.env.DATA_DIR)
-  : path.join(process.cwd(), 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-const DB_PATH = path.join(DATA_DIR, 'chores.db');
 
 declare global {
   // eslint-disable-next-line no-var
-  var __choreDb: Database.Database | undefined;
+  var __chorePool: Pool | undefined;
+  // eslint-disable-next-line no-var
+  var __choreMigration: Promise<void> | undefined;
 }
 
-function createConnection(): Database.Database {
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  migrate(db);
-  return db;
+function createPool(): Pool {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is required (a Postgres connection string)');
+  }
+  return new Pool({
+    connectionString,
+    ssl: /localhost|127\.0\.0\.1/.test(connectionString) ? false : { rejectUnauthorized: false },
+  });
 }
 
-function migrate(db: Database.Database) {
-  db.exec(`
+async function migrate(pool: Pool): Promise<void> {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
     );
 
     CREATE TABLE IF NOT EXISTS kids (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       avatar TEXT NOT NULL DEFAULT '🦁',
       color TEXT NOT NULL DEFAULT '#4fc3f7',
       sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
     CREATE TABLE IF NOT EXISTS chores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       kid_id INTEGER NOT NULL REFERENCES kids(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       emoji TEXT NOT NULL DEFAULT '✅',
       money_cents INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
     CREATE TABLE IF NOT EXISTS chore_completions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       chore_id INTEGER NOT NULL REFERENCES chores(id) ON DELETE CASCADE,
       kid_id INTEGER NOT NULL REFERENCES kids(id) ON DELETE CASCADE,
       date TEXT NOT NULL,
-      completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE(chore_id, date)
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       kid_id INTEGER NOT NULL REFERENCES kids(id) ON DELETE CASCADE,
       amount_cents INTEGER NOT NULL,
       reason TEXT NOT NULL,
       type TEXT NOT NULL,
       chore_completion_id INTEGER REFERENCES chore_completions(id) ON DELETE SET NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
     CREATE TABLE IF NOT EXISTS trophies (
@@ -80,34 +74,69 @@ function migrate(db: Database.Database) {
     );
 
     CREATE TABLE IF NOT EXISTS kid_trophies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       kid_id INTEGER NOT NULL REFERENCES kids(id) ON DELETE CASCADE,
       trophy_id TEXT NOT NULL REFERENCES trophies(id) ON DELETE CASCADE,
-      earned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      earned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE(kid_id, trophy_id)
     );
   `);
 
-  const upsertTrophy = db.prepare(`
-    INSERT INTO trophies (id, name, description, icon, sort_order)
-    VALUES (@id, @name, @description, @icon, @sort_order)
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      description = excluded.description,
-      icon = excluded.icon,
-      sort_order = excluded.sort_order
-  `);
-  const insertMany = db.transaction((trophies: typeof TROPHY_CATALOG) => {
-    trophies.forEach((t, idx) => {
-      upsertTrophy.run({ ...t, sort_order: idx });
-    });
+  const values: unknown[] = [];
+  const rows: string[] = [];
+  TROPHY_CATALOG.forEach((t, idx) => {
+    const base = values.length;
+    rows.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+    values.push(t.id, t.name, t.description, t.icon, idx);
   });
-  insertMany(TROPHY_CATALOG);
+  await pool.query(
+    `INSERT INTO trophies (id, name, description, icon, sort_order)
+     VALUES ${rows.join(', ')}
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       description = EXCLUDED.description,
+       icon = EXCLUDED.icon,
+       sort_order = EXCLUDED.sort_order`,
+    values
+  );
 }
 
-export function getDb(): Database.Database {
-  if (!global.__choreDb) {
-    global.__choreDb = createConnection();
+async function getPool(): Promise<Pool> {
+  if (!global.__chorePool) {
+    global.__chorePool = createPool();
   }
-  return global.__choreDb;
+  if (!global.__choreMigration) {
+    global.__choreMigration = migrate(global.__chorePool);
+  }
+  await global.__choreMigration;
+  return global.__chorePool;
+}
+
+export async function query<T extends QueryResultRow = any>(text: string, params?: unknown[]): Promise<T[]> {
+  const pool = await getPool();
+  const result = await pool.query<T>(text, params);
+  return result.rows;
+}
+
+export type TxQuery = <T extends QueryResultRow = any>(text: string, params?: unknown[]) => Promise<T[]>;
+
+/** Runs `fn` inside a single Postgres transaction, committing on success and rolling back on any thrown error. */
+export async function withTransaction<T>(fn: (q: TxQuery) => Promise<T>): Promise<T> {
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const txQuery: TxQuery = async (text, params) => {
+      const result = await client.query(text, params);
+      return result.rows;
+    };
+    const res = await fn(txQuery);
+    await client.query('COMMIT');
+    return res;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }

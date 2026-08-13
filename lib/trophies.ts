@@ -1,5 +1,5 @@
-import type Database from 'better-sqlite3';
 import { addDays, todayStr } from './dates';
+import { query } from './db';
 
 export interface TrophyDef {
   id: string;
@@ -62,11 +62,12 @@ export function currentStreakFromDates(dateSet: Set<string>, today: string): num
 }
 
 /** Current consecutive-day streak for each of a kid's chores, keyed by chore id. */
-export function getChoreStreaks(db: Database.Database, kidId: number): Map<number, number> {
+export async function getChoreStreaks(kidId: number): Promise<Map<number, number>> {
   const today = todayStr();
-  const rows = db
-    .prepare('SELECT chore_id, date FROM chore_completions WHERE kid_id = ? ORDER BY date ASC')
-    .all(kidId) as { chore_id: number; date: string }[];
+  const rows = await query<{ chore_id: number; date: string }>(
+    'SELECT chore_id, date FROM chore_completions WHERE kid_id = $1 ORDER BY date ASC',
+    [kidId]
+  );
 
   const datesByChore = new Map<number, Set<string>>();
   for (const row of rows) {
@@ -81,27 +82,28 @@ export function getChoreStreaks(db: Database.Database, kidId: number): Map<numbe
   return streaks;
 }
 
-export function computeKidStats(db: Database.Database, kidId: number): KidStats {
+export async function computeKidStats(kidId: number): Promise<KidStats> {
   const today = todayStr();
 
-  const totalCompletions = (
-    db.prepare('SELECT COUNT(*) AS c FROM chore_completions WHERE kid_id = ?').get(kidId) as { c: number }
-  ).c;
+  const [{ c: totalCompletions }] = await query<{ c: number }>(
+    'SELECT COUNT(*)::int AS c FROM chore_completions WHERE kid_id = $1',
+    [kidId]
+  );
 
-  const totalMoneyCents = (
-    db
-      .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ? AND type = 'chore'`)
-      .get(kidId) as { s: number }
-  ).s;
+  const [{ s: totalMoneyCents }] = await query<{ s: number }>(
+    `SELECT COALESCE(SUM(amount_cents), 0)::int AS s FROM transactions WHERE kid_id = $1 AND type = 'chore'`,
+    [kidId]
+  );
 
-  const activeChores = db
-    .prepare('SELECT id FROM chores WHERE kid_id = ? AND active = 1')
-    .all(kidId) as { id: number }[];
+  const activeChores = await query<{ id: number }>('SELECT id FROM chores WHERE kid_id = $1 AND active = 1', [
+    kidId,
+  ]);
   const activeChoreIds = activeChores.map((c) => c.id);
 
-  const completionRows = db
-    .prepare('SELECT chore_id, date FROM chore_completions WHERE kid_id = ? ORDER BY date ASC')
-    .all(kidId) as { chore_id: number; date: string }[];
+  const completionRows = await query<{ chore_id: number; date: string; completed_at: string }>(
+    'SELECT chore_id, date, completed_at FROM chore_completions WHERE kid_id = $1 ORDER BY date ASC',
+    [kidId]
+  );
 
   const datesByChore = new Map<number, string[]>();
   const distinctChoreIdsCompleted = new Set<number>();
@@ -113,7 +115,6 @@ export function computeKidStats(db: Database.Database, kidId: number): KidStats 
 
   let bestChoreStreak = 0;
   let comebackKid = false;
-  let earlyBird = false;
 
   for (const [, dates] of datesByChore) {
     const dateSet = new Set(dates);
@@ -139,12 +140,7 @@ export function computeKidStats(db: Database.Database, kidId: number): KidStats 
     }
   }
 
-  const earlyRow = db
-    .prepare(
-      `SELECT COUNT(*) AS c FROM chore_completions WHERE kid_id = ? AND strftime('%H:%M', completed_at, 'localtime') < '09:00'`
-    )
-    .get(kidId) as { c: number };
-  earlyBird = earlyRow.c > 0;
+  const earlyBird = completionRows.some((row) => new Date(row.completed_at).getHours() < 9);
 
   // Perfect-day tracking uses only currently active chores.
   const dateCompletionCounts = new Map<string, Set<number>>();
@@ -235,21 +231,20 @@ function isTrophyEarned(id: string, s: KidStats): boolean {
 }
 
 /** Evaluates all trophies for a kid, awards any newly-earned ones, and returns them. */
-export function evaluateAndAwardTrophies(db: Database.Database, kidId: number): TrophyDef[] {
-  const stats = computeKidStats(db, kidId);
-  const alreadyEarned = new Set(
-    (db.prepare('SELECT trophy_id FROM kid_trophies WHERE kid_id = ?').all(kidId) as { trophy_id: string }[]).map(
-      (r) => r.trophy_id
-    )
+export async function evaluateAndAwardTrophies(kidId: number): Promise<TrophyDef[]> {
+  const stats = await computeKidStats(kidId);
+  const alreadyEarnedRows = await query<{ trophy_id: string }>(
+    'SELECT trophy_id FROM kid_trophies WHERE kid_id = $1',
+    [kidId]
   );
+  const alreadyEarned = new Set(alreadyEarnedRows.map((r) => r.trophy_id));
 
   const newlyEarned: TrophyDef[] = [];
-  const insert = db.prepare('INSERT INTO kid_trophies (kid_id, trophy_id) VALUES (?, ?)');
 
   for (const trophy of TROPHY_CATALOG) {
     if (alreadyEarned.has(trophy.id)) continue;
     if (isTrophyEarned(trophy.id, stats)) {
-      insert.run(kidId, trophy.id);
+      await query('INSERT INTO kid_trophies (kid_id, trophy_id) VALUES ($1, $2)', [kidId, trophy.id]);
       newlyEarned.push(trophy);
     }
   }

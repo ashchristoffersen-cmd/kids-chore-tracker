@@ -1,12 +1,10 @@
 import { notFound } from 'next/navigation';
-import { getDb } from '@/lib/db';
 import { getKidDetail } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
-export default function KidTrophiesPage({ params }: { params: { id: string } }) {
-  const db = getDb();
-  const detail = getKidDetail(db, Number(params.id));
+export default async function KidTrophiesPage({ params }: { params: { id: string } }) {
+  const detail = await getKidDetail(Number(params.id));
   if (!detail) notFound();
 
   const earnedCount = detail.trophies.filter((t) => t.earned).length;

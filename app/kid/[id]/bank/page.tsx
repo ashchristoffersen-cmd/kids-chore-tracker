@@ -1,16 +1,15 @@
 import { notFound } from 'next/navigation';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getBank } from '@/lib/queries';
 import { formatCents } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
-export default function KidBankPage({ params }: { params: { id: string } }) {
-  const db = getDb();
-  const kid = db.prepare('SELECT * FROM kids WHERE id = ?').get(Number(params.id)) as any;
+export default async function KidBankPage({ params }: { params: { id: string } }) {
+  const [kid] = await query<any>('SELECT * FROM kids WHERE id = $1', [Number(params.id)]);
   if (!kid) notFound();
 
-  const { balanceCents, transactions } = getBank(db, kid.id);
+  const { balanceCents, transactions } = await getBank(kid.id);
 
   return (
     <div className="mx-auto min-h-screen max-w-xl px-4 pb-16 pt-6">
