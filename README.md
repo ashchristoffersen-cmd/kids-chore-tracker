@@ -24,6 +24,17 @@ Then open http://localhost:3000. On first visit there are no kids yet — go to
 Data is stored in a local SQLite file at `data/chores.db` (created automatically,
 not checked into git).
 
+## Tests
+
+```bash
+npm test              # run the unit tests once
+npm run test:coverage # run with a coverage report
+```
+
+Unit tests live in `tests/` and cover the `lib/` logic (dates, money formatting,
+trophy evaluation, dashboard queries, parent PIN hashing) against a fresh
+in-memory SQLite database built from the real schema.
+
 ## Production
 
 ```bash
