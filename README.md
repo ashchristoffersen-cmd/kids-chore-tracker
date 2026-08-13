@@ -11,6 +11,23 @@ A gamified chore tracker for kids, built with Next.js and Postgres.
 - **Piggy bank** — chores can earn money automatically; a PIN-protected Parent Zone lets you add or withdraw money manually and see the full ledger.
 - **Parent Zone** (PIN-protected) — manage kids, chores, and money.
 
+## Want your own copy? (for friends & family)
+
+This app has no concept of separate households — one PIN, one flat set of
+kids/chores/data. So **don't** just use someone else's live link for your own
+kids; you'd be editing their data. Instead, deploy your own completely
+separate copy (free, ~5 minutes):
+
+1. Create a free [Supabase](https://supabase.com) project and grab its
+   Postgres connection string (see "Deploying" below for exactly where).
+2. Click the button below, connect your own GitHub account, and paste that
+   connection string in when it asks for `DATABASE_URL`.
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fashchristoffersen-cmd%2Fkids-chore-tracker&env=DATABASE_URL&envDescription=Postgres+connection+string+%28e.g.+from+a+free+Supabase+project+-+use+the+Transaction+pooler+URI%2C+port+6543%29&envLink=https%3A%2F%2Fgithub.com%2Fashchristoffersen-cmd%2Fkids-chore-tracker%23readme&project-name=chore-champions&repository-name=chore-champions)
+
+This creates a brand new, independent deployment with its own database —
+nothing you do in it affects any other copy, including the original.
+
 ## Running it
 
 You need a Postgres database — [Supabase](https://supabase.com) has a free tier
