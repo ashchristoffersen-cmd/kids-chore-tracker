@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getDb } from '@/lib/db';
 import { getKidDetail } from '@/lib/queries';
+import BackLink from '@/components/BackLink';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,12 +14,7 @@ export default function KidTrophiesPage({ params }: { params: { id: string } }) 
 
   return (
     <div className="mx-auto min-h-screen max-w-2xl px-4 pb-16 pt-6">
-      <a
-        href={`/kid/${detail.kid.id}`}
-        className="tap-target rounded-full bg-white/80 px-4 py-2 text-sm font-bold shadow"
-      >
-        ← Back
-      </a>
+      <BackLink href={`/kid/${detail.kid.id}`}>← Back</BackLink>
 
       <div className="mt-6 text-center">
         <div className="text-6xl">🏆</div>

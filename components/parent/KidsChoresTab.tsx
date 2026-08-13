@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import { AVATAR_OPTIONS, AVATAR_COLORS, CHORE_EMOJI_OPTIONS } from '@/lib/emojis';
-import { formatCents } from '@/lib/money';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
+import { centsToDollars, dollarsToCents, formatCents } from '@/lib/money';
+import DollarInput from '@/components/DollarInput';
+import EmojiPicker from '@/components/EmojiPicker';
 import { KidSummary } from './ParentDashboard';
 
 interface ChoreFull {
@@ -30,8 +33,7 @@ export default function KidsChoresTab({
   const [choresByKid, setChoresByKid] = useState<Record<number, ChoreFull[]>>({});
 
   async function loadChores(kidId: number) {
-    const res = await fetch(`/api/kids/${kidId}`);
-    const data = await res.json();
+    const data = await apiGet(`/api/kids/${kidId}`);
     setChoresByKid((prev) => ({ ...prev, [kidId]: data.chores }));
   }
 
@@ -47,11 +49,7 @@ export default function KidsChoresTab({
   async function handleAddKid(e: React.FormEvent) {
     e.preventDefault();
     if (!newKidName.trim()) return;
-    await fetch('/api/kids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newKidName.trim(), avatar: newKidAvatar, color: newKidColor }),
-    });
+    await apiPost('/api/kids', { name: newKidName.trim(), avatar: newKidAvatar, color: newKidColor });
     setNewKidName('');
     setAddingKid(false);
     await refreshKids();
@@ -59,7 +57,7 @@ export default function KidsChoresTab({
 
   async function handleDeleteKid(kidId: number, name: string) {
     if (!confirm(`Remove ${name} and all their chore history? This can't be undone.`)) return;
-    await fetch(`/api/kids/${kidId}`, { method: 'DELETE' });
+    await apiDelete(`/api/kids/${kidId}`);
     await refreshKids();
   }
 
@@ -111,20 +109,7 @@ export default function KidsChoresTab({
           />
           <div>
             <div className="mb-1 text-xs font-bold uppercase text-slate-400">Avatar</div>
-            <div className="flex flex-wrap gap-2">
-              {AVATAR_OPTIONS.map((a) => (
-                <button
-                  type="button"
-                  key={a}
-                  onClick={() => setNewKidAvatar(a)}
-                  className={`tap-target flex h-11 w-11 items-center justify-center rounded-full text-2xl ${
-                    newKidAvatar === a ? 'bg-grape/20 ring-2 ring-grape' : 'bg-slate-50'
-                  }`}
-                >
-                  {a}
-                </button>
-              ))}
-            </div>
+            <EmojiPicker options={AVATAR_OPTIONS} value={newKidAvatar} onChange={setNewKidAvatar} size="lg" />
           </div>
           <div>
             <div className="mb-1 text-xs font-bold uppercase text-slate-400">Color</div>
@@ -183,12 +168,7 @@ function ChoreManager({
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    const money_cents = Math.max(0, Math.round(parseFloat(dollars || '0') * 100));
-    await fetch('/api/chores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kid_id: kidId, name: name.trim(), emoji, money_cents }),
-    });
+    await apiPost('/api/chores', { kid_id: kidId, name: name.trim(), emoji, money_cents: dollarsToCents(dollars) });
     setName('');
     setDollars('0.25');
     setAdding(false);
@@ -196,7 +176,7 @@ function ChoreManager({
   }
 
   async function handleArchive(choreId: number) {
-    await fetch(`/api/chores/${choreId}`, { method: 'DELETE' });
+    await apiDelete(`/api/chores/${choreId}`);
     onChange();
   }
 
@@ -247,30 +227,9 @@ function ChoreManager({
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-xl border-2 border-slate-200 px-3 py-2"
           />
-          <div className="flex flex-wrap gap-2">
-            {CHORE_EMOJI_OPTIONS.map((em) => (
-              <button
-                type="button"
-                key={em}
-                onClick={() => setEmoji(em)}
-                className={`tap-target flex h-9 w-9 items-center justify-center rounded-full text-xl ${
-                  emoji === em ? 'bg-grape/20 ring-2 ring-grape' : 'bg-slate-50'
-                }`}
-              >
-                {em}
-              </button>
-            ))}
-          </div>
+          <EmojiPicker options={CHORE_EMOJI_OPTIONS} value={emoji} onChange={setEmoji} />
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-500">$</span>
-            <input
-              type="number"
-              step="0.05"
-              min="0"
-              value={dollars}
-              onChange={(e) => setDollars(e.target.value)}
-              className="w-24 rounded-xl border-2 border-slate-200 px-3 py-2"
-            />
+            <DollarInput value={dollars} onChange={setDollars} />
             <span className="text-xs text-slate-400">per completion (0 for none)</span>
           </div>
           <div className="flex gap-2">
@@ -309,49 +268,27 @@ function EditChoreRow({
 }) {
   const [name, setName] = useState(chore.name);
   const [emoji, setEmoji] = useState(chore.emoji);
-  const [dollars, setDollars] = useState((chore.money_cents / 100).toFixed(2));
+  const [dollars, setDollars] = useState(centsToDollars(chore.money_cents));
 
   async function handleSave() {
-    const money_cents = Math.max(0, Math.round(parseFloat(dollars || '0') * 100));
-    await fetch(`/api/chores/${chore.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() || chore.name, emoji, money_cents }),
+    await apiPatch(`/api/chores/${chore.id}`, {
+      name: name.trim() || chore.name,
+      emoji,
+      money_cents: dollarsToCents(dollars),
     });
     onDone();
   }
 
   return (
     <div className="space-y-3 rounded-2xl bg-white p-3 shadow-sm">
-      <div className="flex flex-wrap gap-2">
-        {CHORE_EMOJI_OPTIONS.map((em) => (
-          <button
-            type="button"
-            key={em}
-            onClick={() => setEmoji(em)}
-            className={`tap-target flex h-8 w-8 items-center justify-center rounded-full text-lg ${
-              emoji === em ? 'bg-grape/20 ring-2 ring-grape' : 'bg-slate-50'
-            }`}
-          >
-            {em}
-          </button>
-        ))}
-      </div>
+      <EmojiPicker options={CHORE_EMOJI_OPTIONS} value={emoji} onChange={setEmoji} size="sm" />
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="w-full rounded-xl border-2 border-slate-200 px-3 py-2"
       />
       <div className="flex items-center gap-2">
-        <span className="text-sm font-bold text-slate-500">$</span>
-        <input
-          type="number"
-          step="0.05"
-          min="0"
-          value={dollars}
-          onChange={(e) => setDollars(e.target.value)}
-          className="w-24 rounded-xl border-2 border-slate-200 px-3 py-2"
-        />
+        <DollarInput value={dollars} onChange={setDollars} />
       </div>
       <div className="flex gap-2">
         <button onClick={handleSave} className="tap-target flex-1 rounded-xl bg-grassy py-2 font-bold text-white">

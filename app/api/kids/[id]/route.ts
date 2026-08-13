@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getKidDetail } from '@/lib/queries';
+import { noFieldsResponse, patchRow } from '@/lib/sql';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const kidId = Number(params.id);
@@ -14,18 +15,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const kidId = Number(params.id);
   const body = await req.json();
   const db = getDb();
-  const fields: string[] = [];
-  const values: any[] = [];
-  for (const key of ['name', 'avatar', 'color', 'sort_order']) {
-    if (body[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(body[key]);
-    }
-  }
-  if (fields.length === 0) return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
-  values.push(kidId);
-  db.prepare(`UPDATE kids SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-  const kid = db.prepare('SELECT * FROM kids WHERE id = ?').get(kidId);
+  const kid = patchRow(db, 'kids', kidId, body, ['name', 'avatar', 'color', 'sort_order']);
+  if (!kid) return noFieldsResponse();
   return NextResponse.json(kid);
 }
 

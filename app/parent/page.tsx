@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import ParentDashboard from '@/components/parent/ParentDashboard';
+import PinInput from '@/components/PinInput';
+import { apiGet, apiPost } from '@/lib/api';
 
 const SESSION_KEY = 'chore_tracker_parent_authed';
+const LARGE_PIN_CLASS = 'rounded-2xl px-5 py-4 text-center text-2xl tracking-widest shadow-inner';
 
 export default function ParentGatePage() {
   const [pinSet, setPinSet] = useState<boolean | null>(null);
@@ -17,9 +20,7 @@ export default function ParentGatePage() {
     if (typeof window !== 'undefined' && sessionStorage.getItem(SESSION_KEY) === 'true') {
       setAuthed(true);
     }
-    fetch('/api/parent/auth')
-      .then((r) => r.json())
-      .then((d) => setPinSet(d.pinSet));
+    apiGet('/api/parent/auth').then((d) => setPinSet(d.pinSet));
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -33,12 +34,7 @@ export default function ParentGatePage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/parent/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
-      });
-      const data = await res.json();
+      const { res, data } = await apiPost('/api/parent/auth', { pin });
       if (!res.ok || !data.ok) {
         setError(data.error || 'Incorrect PIN');
         return;
@@ -69,25 +65,13 @@ export default function ParentGatePage() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 flex w-full max-w-xs flex-col gap-3">
-        <input
-          type="password"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          placeholder="PIN"
-          value={pin}
-          onChange={(e) => setPin(e.target.value)}
-          className="rounded-2xl border-2 border-slate-200 px-5 py-4 text-center text-2xl tracking-widest shadow-inner"
-          autoFocus
-        />
+        <PinInput placeholder="PIN" value={pin} onChange={setPin} className={LARGE_PIN_CLASS} autoFocus />
         {!pinSet && (
-          <input
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]*"
+          <PinInput
             placeholder="Confirm PIN"
             value={confirmPin}
-            onChange={(e) => setConfirmPin(e.target.value)}
-            className="rounded-2xl border-2 border-slate-200 px-5 py-4 text-center text-2xl tracking-widest shadow-inner"
+            onChange={setConfirmPin}
+            className={LARGE_PIN_CLASS}
           />
         )}
         {error && <div className="text-sm font-semibold text-red-500">{error}</div>}
