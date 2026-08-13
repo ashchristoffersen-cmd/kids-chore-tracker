@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import ChoreCard, { ChoreState } from './ChoreCard';
 import TrophyModal, { EarnedTrophy } from './TrophyModal';
+import ErrorBanner from './ErrorBanner';
 import { fireChoreConfetti } from '@/lib/confetti';
 import { formatCents } from '@/lib/money';
+import { errorMessage, fetchJson } from '@/lib/fetchJson';
 
 interface KidInfo {
   id: number;
@@ -31,6 +33,7 @@ export default function KidDashboard({
   const [earnedCount, setEarnedCount] = useState(trophyCount);
   const [trophyQueue, setTrophyQueue] = useState<EarnedTrophy[]>([]);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState('');
 
   const doneToday = chores.filter((c) => c.completedToday).length;
   const allDone = chores.length > 0 && doneToday === chores.length;
@@ -38,21 +41,25 @@ export default function KidDashboard({
   async function handleToggle(choreId: number) {
     if (busyId) return;
     setBusyId(choreId);
+    setError('');
     try {
-      const res = await fetch(`/api/chores/${choreId}/complete`, { method: 'POST' });
-      const data = await res.json();
+      const data = await fetchJson<{ completed: boolean; balanceCents: number; newTrophies?: EarnedTrophy[] }>(
+        `/api/chores/${choreId}/complete`,
+        { method: 'POST' }
+      );
 
       if (data.completed) fireChoreConfetti();
       setBalanceCents(data.balanceCents);
 
-      const detailRes = await fetch(`/api/kids/${kid.id}`);
-      const detail = await detailRes.json();
+      const detail = await fetchJson<{ chores: ChoreState[]; trophies: { earned: boolean }[] }>(`/api/kids/${kid.id}`);
       setChores(detail.chores);
-      setEarnedCount(detail.trophies.filter((t: any) => t.earned).length);
+      setEarnedCount(detail.trophies.filter((t) => t.earned).length);
 
       if (data.newTrophies?.length) {
-        setTrophyQueue((q) => [...q, ...data.newTrophies]);
+        setTrophyQueue((q) => [...q, ...data.newTrophies!]);
       }
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setBusyId(null);
     }
@@ -108,6 +115,12 @@ export default function KidDashboard({
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="mt-6">
+          <ErrorBanner message={error} onRetry={() => window.location.reload()} />
+        </div>
+      )}
 
       <div className="mt-6 space-y-4">
         {chores.length === 0 && (

@@ -4,10 +4,6 @@ import fs from 'fs';
 import { TROPHY_CATALOG } from './trophies';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
 const DB_PATH = path.join(DATA_DIR, 'chores.db');
 
 declare global {
@@ -16,10 +12,27 @@ declare global {
 }
 
 function createConnection(): Database.Database {
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  migrate(db);
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (err) {
+    throw new Error(`Could not create the data directory at ${DATA_DIR}: ${(err as Error).message}`);
+  }
+
+  let db: Database.Database;
+  try {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+  } catch (err) {
+    throw new Error(`Could not open the database at ${DB_PATH}: ${(err as Error).message}`);
+  }
+
+  try {
+    migrate(db);
+  } catch (err) {
+    db.close();
+    throw new Error(`Database migration failed: ${(err as Error).message}`);
+  }
   return db;
 }
 

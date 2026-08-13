@@ -2,6 +2,10 @@ import type Database from 'better-sqlite3';
 import { todayStr } from './dates';
 import { getChoreStreaks, TROPHY_CATALOG } from './trophies';
 
+export function kidExists(db: Database.Database, kidId: number): boolean {
+  return !!db.prepare('SELECT 1 FROM kids WHERE id = ?').get(kidId);
+}
+
 export function getKidsSummary(db: Database.Database) {
   const kids = db.prepare('SELECT * FROM kids ORDER BY sort_order ASC, id ASC').all() as any[];
   const today = todayStr();

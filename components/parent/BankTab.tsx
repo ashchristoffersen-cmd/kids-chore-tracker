@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { formatCents } from '@/lib/money';
+import { errorMessage, fetchJson, postJson } from '@/lib/fetchJson';
+import ErrorBanner from '../ErrorBanner';
 import { KidSummary } from './ParentDashboard';
 
 interface Transaction {
@@ -19,41 +21,47 @@ export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; ref
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!selectedKidId && kids[0]) setSelectedKidId(kids[0].id);
   }, [kids, selectedKidId]);
 
   async function loadBank(kidId: number) {
-    const res = await fetch(`/api/bank/${kidId}`);
-    const data = await res.json();
+    const data = await fetchJson<{ balanceCents: number; transactions: Transaction[] }>(`/api/bank/${kidId}`);
     setBalanceCents(data.balanceCents);
-    setTransactions(data.transactions);
+    setTransactions(data.transactions ?? []);
   }
 
   useEffect(() => {
-    if (selectedKidId) loadBank(selectedKidId);
+    if (!selectedKidId) return;
+    setError('');
+    loadBank(selectedKidId).catch((err) => setError(errorMessage(err)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKidId]);
 
   async function handleAdjust(type: 'manual_add' | 'manual_remove') {
     if (!selectedKidId) return;
-    const cents = Math.round(parseFloat(amount || '0') * 100);
-    if (!cents || cents <= 0) return;
+    const dollars = parseFloat(amount);
+    const cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+    if (cents <= 0) {
+      setError('Enter an amount greater than $0.00');
+      return;
+    }
+    setError('');
     setSubmitting(true);
     try {
-      await fetch(`/api/bank/${selectedKidId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount_cents: cents,
-          reason: reason.trim() || (type === 'manual_add' ? 'Deposit from parent' : 'Withdrawal'),
-          type,
-        }),
+      await postJson(`/api/bank/${selectedKidId}`, {
+        amount_cents: cents,
+        reason: reason.trim() || (type === 'manual_add' ? 'Deposit from parent' : 'Withdrawal'),
+        type,
       });
       setAmount('');
       setReason('');
       await loadBank(selectedKidId);
       await refreshKids();
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -78,6 +86,20 @@ export default function BankTab({ kids, refreshKids }: { kids: KidSummary[]; ref
           </button>
         ))}
       </div>
+
+      {error && (
+        <ErrorBanner
+          message={error}
+          onRetry={
+            selectedKidId
+              ? () => {
+                  setError('');
+                  loadBank(selectedKidId).catch((err) => setError(errorMessage(err)));
+                }
+              : undefined
+          }
+        />
+      )}
 
       <div className="rounded-3xl bg-white p-6 text-center shadow">
         <div className="text-sm font-bold uppercase text-slate-400">Balance</div>

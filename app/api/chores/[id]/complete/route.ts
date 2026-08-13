@@ -1,18 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { todayStr } from '@/lib/dates';
 import { evaluateAndAwardTrophies } from '@/lib/trophies';
+import { notFound, parseIdParam, route } from '@/lib/api';
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
-  const choreId = Number(params.id);
+type Ctx = { params: { id: string } };
+
+export const POST = route<Ctx>(async (_req, { params }) => {
+  const choreId = parseIdParam(params.id, 'chore id');
   const db = getDb();
-  const chore = db.prepare('SELECT * FROM chores WHERE id = ?').get(choreId) as any;
-  if (!chore) return NextResponse.json({ error: 'Chore not found' }, { status: 404 });
+  const chore = db.prepare('SELECT * FROM chores WHERE id = ?').get(choreId) as
+    | { id: number; kid_id: number; name: string; money_cents: number }
+    | undefined;
+  if (!chore) throw notFound('Chore not found');
 
   const today = todayStr();
   const existing = db
     .prepare('SELECT * FROM chore_completions WHERE chore_id = ? AND date = ?')
-    .get(choreId, today) as any;
+    .get(choreId, today) as { id: number } | undefined;
 
   let completed: boolean;
 
@@ -39,7 +44,16 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     completed = true;
   }
 
-  const newTrophies = completed ? evaluateAndAwardTrophies(db, chore.kid_id) : [];
+  // Trophy evaluation is a bonus on top of the completion that already
+  // committed — never fail the request (and lose the toggle) because of it.
+  let newTrophies: ReturnType<typeof evaluateAndAwardTrophies> = [];
+  if (completed) {
+    try {
+      newTrophies = evaluateAndAwardTrophies(db, chore.kid_id);
+    } catch (err) {
+      console.error(`[api] trophy evaluation failed for kid ${chore.kid_id}:`, err);
+    }
+  }
 
   const balanceCents = (
     db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE kid_id = ?').get(chore.kid_id) as {
@@ -48,4 +62,4 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   ).s;
 
   return NextResponse.json({ completed, newTrophies, balanceCents });
-}
+});

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { errorMessage, fetchJson } from '@/lib/fetchJson';
+import ErrorBanner from '../ErrorBanner';
 import KidsChoresTab from './KidsChoresTab';
 import BankTab from './BankTab';
 import SettingsTab from './SettingsTab';
@@ -21,16 +23,25 @@ export default function ParentDashboard() {
   const [tab, setTab] = useState<Tab>('kids');
   const [kids, setKids] = useState<KidSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const refreshKids = useCallback(async () => {
-    const res = await fetch('/api/kids');
-    const data = await res.json();
-    setKids(data);
-    setLoading(false);
+    try {
+      const data = await fetchJson<KidSummary[]>('/api/kids');
+      setKids(Array.isArray(data) ? data : []);
+      setError('');
+    } catch (err) {
+      setError(errorMessage(err));
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    refreshKids();
+    refreshKids().catch(() => {
+      // Already surfaced through the error banner.
+    });
   }, [refreshKids]);
 
   return (
@@ -61,6 +72,17 @@ export default function ParentDashboard() {
           </button>
         ))}
       </div>
+
+      {error && (
+        <div className="mt-4">
+          <ErrorBanner
+            message={error}
+            onRetry={() => {
+              refreshKids().catch(() => {});
+            }}
+          />
+        </div>
+      )}
 
       <div className="mt-6">
         {loading ? (
