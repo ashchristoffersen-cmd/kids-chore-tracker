@@ -1,6 +1,6 @@
 # Chore Champions
 
-A gamified chore tracker for kids, built with Next.js and SQLite.
+A gamified chore tracker for kids, built with Next.js and Postgres.
 
 ## Features
 
@@ -13,16 +13,19 @@ A gamified chore tracker for kids, built with Next.js and SQLite.
 
 ## Running it
 
+You need a Postgres database — [Supabase](https://supabase.com) has a free tier
+that works well. Copy `.env.example` to `.env.local` and set `DATABASE_URL` to
+your connection string (from Supabase: Project Settings → Database →
+Connection string).
+
 ```bash
 npm install
 npm run dev
 ```
 
 Then open http://localhost:3000. On first visit there are no kids yet — go to
-**Parent Zone**, set a PIN, and add your kids and their chores.
-
-Data is stored in a local SQLite file at `data/chores.db` (created automatically,
-not checked into git).
+**Parent Zone**, set a PIN, and add your kids and their chores. The database
+schema and trophy catalog are created automatically on first request.
 
 ## Production
 
@@ -31,7 +34,32 @@ npm run build
 npm run start
 ```
 
-This is a small self-hosted app meant to run on a home server, NAS, or
-Raspberry Pi and be opened from a shared tablet/browser on your home network —
-there's no built-in HTTPS or multi-household auth, so don't expose it directly
-to the internet.
+Only the Parent Zone is PIN-protected — there's no per-user login — so treat
+it as a single-household app rather than a multi-tenant service.
+
+## Deploying (Vercel + Supabase)
+
+1. In [Supabase](https://supabase.com), create a project and grab its Postgres
+   connection string (Project Settings → Database → Connection string). Use
+   the **Transaction pooler** URI (port 6543) — Vercel's serverless functions
+   need pooled connections rather than a direct connection.
+2. In [Vercel](https://vercel.com), import this GitHub repo as a new project
+   (pick the branch you want deployed).
+3. Set the env var `DATABASE_URL` to the connection string from step 1.
+4. Deploy. Vercel gives you a `*.vercel.app` URL immediately, plus the option
+   to attach a custom domain.
+
+No other environment variables are required — the parent PIN is set from
+within the app on first visit, not via config.
+
+## Deploying (Railway, alternative)
+
+The repo also includes a `Dockerfile` and `railway.toml` if you'd rather run
+this as a long-lived container instead of on Vercel:
+
+1. In Railway, create a new project from this GitHub repo.
+2. Railway detects the `Dockerfile` and builds from it automatically.
+3. Set the env var `DATABASE_URL` (same Supabase connection string as above,
+   or any other Postgres instance — no volume needed since data lives in
+   Postgres, not on local disk).
+4. Deploy, then generate a public domain under Settings → Networking.

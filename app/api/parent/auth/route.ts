@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isPinSet, setPin, verifyPin } from '@/lib/auth';
 
 export async function GET() {
-  return NextResponse.json({ pinSet: isPinSet() });
+  return NextResponse.json({ pinSet: await isPinSet() });
 }
 
 export async function POST(req: NextRequest) {
@@ -12,12 +12,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'PIN must be 4-6 digits' }, { status: 400 });
   }
 
-  if (!isPinSet()) {
-    setPin(pin);
+  if (!(await isPinSet())) {
+    await setPin(pin);
     return NextResponse.json({ ok: true, created: true });
   }
 
-  const ok = verifyPin(pin);
+  const ok = await verifyPin(pin);
   if (!ok) return NextResponse.json({ ok: false }, { status: 401 });
   return NextResponse.json({ ok: true, created: false });
 }

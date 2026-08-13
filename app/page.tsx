@@ -1,12 +1,10 @@
-import { getDb } from '@/lib/db';
 import { getKidsSummary } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export default function HomePage() {
-  const db = getDb();
-  const kids = getKidsSummary(db);
+export default async function HomePage() {
+  const kids = await getKidsSummary();
 
   if (kids.length === 0) {
     return (

@@ -6,12 +6,12 @@ export async function POST(req: NextRequest) {
   const currentPin = String(body.currentPin || '');
   const newPin = String(body.newPin || '');
 
-  if (!verifyPin(currentPin)) {
+  if (!(await verifyPin(currentPin))) {
     return NextResponse.json({ error: 'Current PIN is incorrect' }, { status: 401 });
   }
   if (!/^\d{4,6}$/.test(newPin)) {
     return NextResponse.json({ error: 'New PIN must be 4-6 digits' }, { status: 400 });
   }
-  setPin(newPin);
+  await setPin(newPin);
   return NextResponse.json({ ok: true });
 }
