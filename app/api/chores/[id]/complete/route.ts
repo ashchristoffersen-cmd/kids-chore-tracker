@@ -5,14 +5,14 @@ import { evaluateAndAwardTrophies } from '@/lib/trophies';
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const choreId = Number(params.id);
-  const [chore] = await query<any>('SELECT * FROM chores WHERE id = $1', [choreId]);
-  if (!chore) return NextResponse.json({ error: 'Chore not found' }, { status: 404 });
-
   const today = todayStr();
-  const [existing] = await query<any>('SELECT * FROM chore_completions WHERE chore_id = $1 AND date = $2', [
-    choreId,
-    today,
+
+  // Independent reads — run concurrently instead of one round trip each in sequence.
+  const [[chore], [existing]] = await Promise.all([
+    query<any>('SELECT * FROM chores WHERE id = $1', [choreId]),
+    query<any>('SELECT * FROM chore_completions WHERE chore_id = $1 AND date = $2', [choreId, today]),
   ]);
+  if (!chore) return NextResponse.json({ error: 'Chore not found' }, { status: 404 });
 
   let completed: boolean;
 
@@ -39,12 +39,13 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     completed = true;
   }
 
-  const newTrophies = completed ? await evaluateAndAwardTrophies(chore.kid_id) : [];
-
-  const [{ s: balanceCents }] = await query<{ s: number }>(
-    'SELECT COALESCE(SUM(amount_cents), 0)::int AS s FROM transactions WHERE kid_id = $1',
-    [chore.kid_id]
-  );
+  // Trophy evaluation and the balance readback don't depend on each other — run them concurrently.
+  const [newTrophies, [{ s: balanceCents }]] = await Promise.all([
+    completed ? evaluateAndAwardTrophies(chore.kid_id) : Promise.resolve([]),
+    query<{ s: number }>('SELECT COALESCE(SUM(amount_cents), 0)::int AS s FROM transactions WHERE kid_id = $1', [
+      chore.kid_id,
+    ]),
+  ]);
 
   return NextResponse.json({ completed, newTrophies, balanceCents });
 }

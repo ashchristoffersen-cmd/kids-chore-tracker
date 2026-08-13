@@ -85,25 +85,24 @@ export async function getChoreStreaks(kidId: number): Promise<Map<number, number
 export async function computeKidStats(kidId: number): Promise<KidStats> {
   const today = todayStr();
 
-  const [{ c: totalCompletions }] = await query<{ c: number }>(
-    'SELECT COUNT(*)::int AS c FROM chore_completions WHERE kid_id = $1',
-    [kidId]
-  );
-
-  const [{ s: totalMoneyCents }] = await query<{ s: number }>(
-    `SELECT COALESCE(SUM(amount_cents), 0)::int AS s FROM transactions WHERE kid_id = $1 AND type = 'chore'`,
-    [kidId]
-  );
-
-  const activeChores = await query<{ id: number }>('SELECT id FROM chores WHERE kid_id = $1 AND active = 1', [
-    kidId,
+  // These three reads are independent of each other, so run them concurrently
+  // instead of paying for a round trip each in sequence.
+  const [totalMoneyRows, activeChores, completionRows] = await Promise.all([
+    query<{ s: number }>(
+      `SELECT COALESCE(SUM(amount_cents), 0)::int AS s FROM transactions WHERE kid_id = $1 AND type = 'chore'`,
+      [kidId]
+    ),
+    query<{ id: number }>('SELECT id FROM chores WHERE kid_id = $1 AND active = 1', [kidId]),
+    query<{ chore_id: number; date: string; completed_at: string }>(
+      'SELECT chore_id, date, completed_at FROM chore_completions WHERE kid_id = $1 ORDER BY date ASC',
+      [kidId]
+    ),
   ]);
-  const activeChoreIds = activeChores.map((c) => c.id);
 
-  const completionRows = await query<{ chore_id: number; date: string; completed_at: string }>(
-    'SELECT chore_id, date, completed_at FROM chore_completions WHERE kid_id = $1 ORDER BY date ASC',
-    [kidId]
-  );
+  const totalMoneyCents = totalMoneyRows[0].s;
+  const activeChoreIds = activeChores.map((c) => c.id);
+  // Same rows already give us the total completion count, no need for a separate COUNT(*) query.
+  const totalCompletions = completionRows.length;
 
   const datesByChore = new Map<number, string[]>();
   const distinctChoreIdsCompleted = new Set<number>();
@@ -232,21 +231,25 @@ function isTrophyEarned(id: string, s: KidStats): boolean {
 
 /** Evaluates all trophies for a kid, awards any newly-earned ones, and returns them. */
 export async function evaluateAndAwardTrophies(kidId: number): Promise<TrophyDef[]> {
-  const stats = await computeKidStats(kidId);
-  const alreadyEarnedRows = await query<{ trophy_id: string }>(
-    'SELECT trophy_id FROM kid_trophies WHERE kid_id = $1',
-    [kidId]
-  );
+  const [stats, alreadyEarnedRows] = await Promise.all([
+    computeKidStats(kidId),
+    query<{ trophy_id: string }>('SELECT trophy_id FROM kid_trophies WHERE kid_id = $1', [kidId]),
+  ]);
   const alreadyEarned = new Set(alreadyEarnedRows.map((r) => r.trophy_id));
 
-  const newlyEarned: TrophyDef[] = [];
+  const newlyEarned = TROPHY_CATALOG.filter(
+    (trophy) => !alreadyEarned.has(trophy.id) && isTrophyEarned(trophy.id, stats)
+  );
 
-  for (const trophy of TROPHY_CATALOG) {
-    if (alreadyEarned.has(trophy.id)) continue;
-    if (isTrophyEarned(trophy.id, stats)) {
-      await query('INSERT INTO kid_trophies (kid_id, trophy_id) VALUES ($1, $2)', [kidId, trophy.id]);
-      newlyEarned.push(trophy);
-    }
+  if (newlyEarned.length > 0) {
+    const values: unknown[] = [];
+    const rows: string[] = [];
+    newlyEarned.forEach((trophy) => {
+      const base = values.length;
+      rows.push(`($${base + 1}, $${base + 2})`);
+      values.push(kidId, trophy.id);
+    });
+    await query(`INSERT INTO kid_trophies (kid_id, trophy_id) VALUES ${rows.join(', ')}`, values);
   }
 
   return newlyEarned;
