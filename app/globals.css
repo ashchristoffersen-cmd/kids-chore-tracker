@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(160deg, #fff7e6 0%, #eaf6ff 50%, #ffe9f5 100%);
+  min-height: 100vh;
+}
+
+.tap-target {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
