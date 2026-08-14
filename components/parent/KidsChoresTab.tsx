@@ -14,6 +14,15 @@ interface ChoreFull {
   active: number;
 }
 
+interface TrophyState {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  earned: boolean;
+  earnedAt: string | null;
+}
+
 export default function KidsChoresTab({
   kids,
   refreshKids,
@@ -28,11 +37,13 @@ export default function KidsChoresTab({
 
   const [expandedKid, setExpandedKid] = useState<number | null>(null);
   const [choresByKid, setChoresByKid] = useState<Record<number, ChoreFull[]>>({});
+  const [trophiesByKid, setTrophiesByKid] = useState<Record<number, TrophyState[]>>({});
 
-  async function loadChores(kidId: number) {
+  async function loadKidDetail(kidId: number) {
     const res = await fetch(`/api/kids/${kidId}`);
     const data = await res.json();
     setChoresByKid((prev) => ({ ...prev, [kidId]: data.chores }));
+    setTrophiesByKid((prev) => ({ ...prev, [kidId]: data.trophies }));
   }
 
   async function toggleExpand(kidId: number) {
@@ -41,7 +52,7 @@ export default function KidsChoresTab({
       return;
     }
     setExpandedKid(kidId);
-    if (!choresByKid[kidId]) await loadChores(kidId);
+    if (!choresByKid[kidId]) await loadKidDetail(kidId);
   }
 
   async function handleAddKid(e: React.FormEvent) {
@@ -95,7 +106,12 @@ export default function KidsChoresTab({
           </div>
 
           {expandedKid === kid.id && (
-            <ChoreManager kidId={kid.id} chores={choresByKid[kid.id] || []} onChange={() => loadChores(kid.id).then(refreshKids)} />
+            <ChoreManager
+              kidId={kid.id}
+              chores={choresByKid[kid.id] || []}
+              trophies={trophiesByKid[kid.id] || []}
+              onChange={() => loadKidDetail(kid.id).then(refreshKids)}
+            />
           )}
         </div>
       ))}
@@ -168,10 +184,12 @@ export default function KidsChoresTab({
 function ChoreManager({
   kidId,
   chores,
+  trophies,
   onChange,
 }: {
   kidId: number;
   chores: ChoreFull[];
+  trophies: TrophyState[];
   onChange: () => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -179,6 +197,15 @@ function ChoreManager({
   const [emoji, setEmoji] = useState(CHORE_EMOJI_OPTIONS[0]);
   const [dollars, setDollars] = useState('0.25');
   const [editingId, setEditingId] = useState<number | null>(null);
+
+  const earnedTrophies = trophies
+    .filter((t) => t.earned)
+    .sort((a, b) => (b.earnedAt || '').localeCompare(a.earnedAt || ''));
+
+  async function handleRemoveTrophy(trophyId: string) {
+    await fetch(`/api/trophies/${kidId}/${trophyId}`, { method: 'DELETE' });
+    onChange();
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -313,6 +340,30 @@ function ChoreManager({
           + Add Chore
         </button>
       )}
+
+      <div className="mt-6 mb-3 text-sm font-bold uppercase tracking-wide text-slate-400">
+        Trophies Earned ({earnedTrophies.length}) — newest first
+      </div>
+      <div className="max-h-72 space-y-2 overflow-y-auto">
+        {earnedTrophies.map((t) => (
+          <div key={t.id} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm">
+            <div className="text-2xl">{t.icon}</div>
+            <div className="flex-1">
+              <div className="font-semibold text-slate-700">{t.name}</div>
+              <div className="text-xs text-slate-400">{t.description}</div>
+            </div>
+            <button
+              onClick={() => handleRemoveTrophy(t.id)}
+              className="tap-target rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-500"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        {earnedTrophies.length === 0 && (
+          <div className="py-4 text-center text-sm text-slate-400">No trophies earned yet.</div>
+        )}
+      </div>
     </div>
   );
 }
