@@ -1,6 +1,6 @@
 import { query } from './db';
 import { todayStr } from './dates';
-import { getChoreStreaks, TROPHY_CATALOG } from './trophies';
+import { buildTrophyCatalog, getChoreStreaks } from './trophies';
 
 export async function getKidsSummary() {
   const kids = await query<any>('SELECT * FROM kids ORDER BY sort_order ASC, id ASC');
@@ -63,7 +63,7 @@ export async function getKidDetail(kidId: number) {
   );
   const earnedMap = new Map(earnedTrophyRows.map((r) => [r.trophy_id, r.earned_at]));
 
-  const trophies = TROPHY_CATALOG.map((t) => ({
+  const trophies = buildTrophyCatalog(chores.map((c) => ({ id: c.id, name: c.name }))).map((t) => ({
     ...t,
     earned: earnedMap.has(t.id),
     earnedAt: earnedMap.get(t.id) || null,

@@ -1,5 +1,4 @@
 import { Pool, QueryResultRow } from 'pg';
-import { TROPHY_CATALOG } from './trophies';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -43,7 +42,8 @@ async function migrate(pool: Pool): Promise<void> {
       money_cents INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      archived_at TIMESTAMPTZ
     );
 
     CREATE TABLE IF NOT EXISTS chore_completions (
@@ -65,40 +65,21 @@ async function migrate(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
-    CREATE TABLE IF NOT EXISTS trophies (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL,
-      icon TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
-    );
-
     CREATE TABLE IF NOT EXISTS kid_trophies (
       id SERIAL PRIMARY KEY,
       kid_id INTEGER NOT NULL REFERENCES kids(id) ON DELETE CASCADE,
-      trophy_id TEXT NOT NULL REFERENCES trophies(id) ON DELETE CASCADE,
+      trophy_id TEXT NOT NULL,
       earned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE(kid_id, trophy_id)
     );
-  `);
 
-  const values: unknown[] = [];
-  const rows: string[] = [];
-  TROPHY_CATALOG.forEach((t, idx) => {
-    const base = values.length;
-    rows.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
-    values.push(t.id, t.name, t.description, t.icon, idx);
-  });
-  await pool.query(
-    `INSERT INTO trophies (id, name, description, icon, sort_order)
-     VALUES ${rows.join(', ')}
-     ON CONFLICT (id) DO UPDATE SET
-       name = EXCLUDED.name,
-       description = EXCLUDED.description,
-       icon = EXCLUDED.icon,
-       sort_order = EXCLUDED.sort_order`,
-    values
-  );
+    -- Trophy definitions now live in code (lib/trophies.ts) and are generated per kid
+    -- (including one set per chore), so trophy_id is no longer a fixed, pre-seeded
+    -- catalog — drop the old FK and the now-unused catalog table from earlier deploys.
+    ALTER TABLE chores ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+    ALTER TABLE kid_trophies DROP CONSTRAINT IF EXISTS kid_trophies_trophy_id_fkey;
+    DROP TABLE IF EXISTS trophies;
+  `);
 }
 
 async function getPool(): Promise<Pool> {
