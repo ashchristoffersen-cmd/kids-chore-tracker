@@ -1,4 +1,4 @@
-import { addDays, dayOfWeek, toDateStr, todayStr } from './dates';
+import { addDays, dayOfWeek, hourInAppTimezone, toDateStr, todayStr } from './dates';
 import { query } from './db';
 
 export interface TrophyDef {
@@ -256,8 +256,8 @@ export async function computeKidStats(kidId: number): Promise<KidStats> {
     }
   }
 
-  const earlyBird = completionRows.some((row) => new Date(row.completed_at).getHours() < 9);
-  const nightOwl = completionRows.some((row) => new Date(row.completed_at).getHours() >= 20);
+  const earlyBird = completionRows.some((row) => hourInAppTimezone(new Date(row.completed_at)) < 9);
+  const nightOwl = completionRows.some((row) => hourInAppTimezone(new Date(row.completed_at)) >= 20);
   const freshStart = completionRows.some((row) => row.date.slice(-2) === '01');
 
   // Perfect-day tracking uses the set of chores that actually existed (and weren't yet
